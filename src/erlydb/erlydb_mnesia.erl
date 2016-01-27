@@ -326,13 +326,13 @@ q2({delete, Table, {where, Where}}, Options) ->
 	q2({delete, Table, Where}, Options);
 q2({delete, Table, Where}, Options) ->
     {atomic, Num} = mnesia:transaction(
-    	fun() -> 
+    	fun() ->
             {data, Records} = q2({select, Table, Where}, Options),
             lists:foreach(fun(Record) -> mnesia:delete_object(Record) end, Records),
             length(Records)
         end),
     {ok, Num};
-    
+
 q2(Statement, Options) ->
     ?L(["Unhandled statement and options: ", Statement, Options]),
     exit("Unhandled statement").
@@ -349,7 +349,7 @@ select(Modifier, Fields, Tables, WhereExpr, Extras, Options, QHDesc) ->
     QHDesc3 = tables(Tables, QHDesc2),
     QHDesc4 = where(WhereExpr, QHDesc3),
     QHDesc5 = extras(Extras, QHDesc4),
-    
+
     Desc = QHDesc5,
     QLC = if length(Desc#qhdesc.expressions) > 1 -> "[{" ++ comma(Desc#qhdesc.expressions) ++ "}";
              true -> "[" ++ comma(Desc#qhdesc.expressions)
@@ -357,7 +357,7 @@ select(Modifier, Fields, Tables, WhereExpr, Extras, Options, QHDesc) ->
 	QLC1 = QLC ++ " || " ++ comma(Desc#qhdesc.generators ++ lists:reverse(Desc#qhdesc.filters)) ++ "].",
     ?L(["About to execute QLC: ", QLC1]),
     {atomic, Results} = transaction(
-    	fun() -> 
+    	fun() ->
             QHOptions = Desc#qhdesc.options,
         	QH = qlc:string_to_handle(QLC1, QHOptions, Desc#qhdesc.bindings),
             PostQH = Desc#qhdesc.postqh,
@@ -389,7 +389,7 @@ fields({call, avg, Field}, #qhdesc{metadata = QLCData} = QHDesc) when is_atom(Fi
 	fields({call, avg, {Table, Field}}, QHDesc);
 fields({call, avg, {Table, Field}}, #qhdesc{metadata = QLCData} = QHDesc) ->
 	Index = dict:fetch({index,Table,Field}, QLCData),
-	QHDesc1 = QHDesc#qhdesc{posteval = 
+	QHDesc1 = QHDesc#qhdesc{posteval =
      	fun(Results) ->
             Total = lists:foldl(fun(Record, Sum) -> element(Index, Record) + Sum end, 0, Results),
             {ok, [{Total/length(Results)}]}
@@ -398,8 +398,8 @@ fields({call, avg, {Table, Field}}, #qhdesc{metadata = QLCData} = QHDesc) ->
 
 %% Count functions
 fields({call, count, What}, #qhdesc{metadata = QLCData} = QHDesc) when is_atom(What) ->
-    QHDesc1 = case regexp:split(atom_to_list(What), "distinct ") of
-        {ok, [[], Field]} -> 
+    QHDesc1 = case re:split(atom_to_list(What), "distinct ") of
+        [[], Field] ->
             [Table | _] = resolve_field(Field, QLCData),
             QHDesc#qhdesc{
                 expressions = [dict:fetch({alias, Table}, QLCData)],
@@ -412,7 +412,7 @@ fields({call, count, What}, #qhdesc{metadata = QLCData} = QHDesc) when is_atom(W
 fields({call, count, _What}, QHDesc) ->
     fields('*', QHDesc#qhdesc{posteval = fun count/1});
 
-%% Max/Min functions                 
+%% Max/Min functions
 fields({call, max, Field}, QHDesc) ->
     min_max(Field, QHDesc, [{order, descending}, {unique, true}]);
 fields({call, min, Field}, QHDesc) ->
@@ -469,14 +469,14 @@ where({{_,_} = From, 'is', 'null'}, #qhdesc{filters = Filters, metadata = QLCDat
 where({{_,_} = From, 'like', To}, QHDesc) when is_binary(To) ->
     where({From, 'like', erlang:binary_to_list(To)}, QHDesc);
 where({{Table,Field} = From, 'like', To}, #qhdesc{filters = Filters, metadata = QLCData} = QHDesc) ->
-    {ok, To1, _RepCount} = regexp:gsub(To, "%", ".*"),
+    To1 = re:replace(To, "%", ".*", [{return,list}, global]),
     To2 = "\"^" ++ To1 ++ "$\"",
     Filter = case mnesia_type(Table, Field) of
                  binary -> "erlang:binary_to_list(" ++ dict:fetch(From, QLCData) ++ ")";
                  _Other -> dict:fetch(From, QLCData)
              end,
-    QHDesc#qhdesc{filters = ["regexp:first_match(" ++ Filter ++ ", " ++ To2 ++ ") /= nomatch" | Filters]};
-                 
+    QHDesc#qhdesc{filters = ["re:run(" ++ Filter ++ ", " ++ To2 ++ ") /= nomatch" | Filters]};
+
 where({{_, _} = From, '=', To}, QHDesc) ->
     where({From, "==", To}, QHDesc);
 where({{_, _} = From, Op, To}, QHDesc) when is_atom(Op) ->
@@ -484,7 +484,7 @@ where({{_, _} = From, Op, To}, QHDesc) when is_atom(Op) ->
 
 where({{_, _} = From, Op, {Table, Field} = To}, #qhdesc{filters = Filters, metadata = QLCData} = QHDesc) 
 		when is_atom(Table), is_atom(Field) ->
-    QHDesc#qhdesc{filters = [lists:concat([dict:fetch(From, QLCData), " ", Op, " ", 
+    QHDesc#qhdesc{filters = [lists:concat([dict:fetch(From, QLCData), " ", Op, " ",
                                            dict:fetch(To, QLCData)]) | Filters]};
 where({{Table, Field} = From, Op, To}, #qhdesc{filters = Filters, bindings = Bindings, metadata = QLCData} = QHDesc) ->
 	case resolve_field(To, QLCData) of
@@ -500,7 +500,7 @@ where(undefined, QHDesc) ->
 
 where(Where, _QHDesc) ->
     ?L(["Unhandled where: ", Where]),
-    exit("Unhandled where").    
+    exit("Unhandled where").
 
 
 extras([Extra | Extras], QHDesc) ->
@@ -518,7 +518,7 @@ extras({order_by, {Field, Order}}, #qhdesc{metadata = QLCData} = QHDesc) when is
 				    SortOptions)
 		end};
 extras({limit, Limit}, QHDesc) ->
-    QHDesc#qhdesc{evalfun = 
+    QHDesc#qhdesc{evalfun =
         fun(QH, QHOptions) ->
         	QHCursor = qlc:cursor(QH, QHOptions),
         	Results = qlc:next_answers(QHCursor, Limit),
@@ -528,7 +528,7 @@ extras({limit, Limit}, QHDesc) ->
 extras({limit, 0, Limit}, QHDesc) ->
     extras({limit, Limit}, QHDesc);
 extras({limit, From, Limit}, QHDesc) ->
-    QHDesc#qhdesc{evalfun = 
+    QHDesc#qhdesc{evalfun =
         fun(QH, QHOptions) ->
         	QHCursor = qlc:cursor(QH, QHOptions),
         	qlc:next_answers(QHCursor, From),
@@ -553,16 +553,16 @@ count(Results) ->
     {ok, [{length(Results)}]}.
 min_max(Field, #qhdesc{metadata = QLCData} = QHDesc, Options) ->
     [Table | _] = resolve_field(Field, QLCData),
-    QHDesc1 = QHDesc#qhdesc{postqh = 
+    QHDesc1 = QHDesc#qhdesc{postqh =
 		fun(QH, _QHOptions) ->
 	        qlc:keysort(dict:fetch({index,Table,Field}, QLCData), QH, Options)
         end},
- 	QHDesc2 = QHDesc1#qhdesc{posteval = 
+ 	QHDesc2 = QHDesc1#qhdesc{posteval =
      	fun(Results) ->
 	        {ok, [{element(dict:fetch({index,Table,Field}, QLCData), hd(Results))}]}
         end},
     QHDesc2#qhdesc{expressions = [dict:fetch({alias, Table}, QLCData)]}.
-    
+
 
 
 % For each table, add the metadata for the table's fields to the dictionary and then
@@ -601,12 +601,12 @@ get_qlc_metadata({Table, 'as', Alias}, Tables, QLCData) ->
     QLCData4 = get_qlc_metadata(table_fields(Table), 2, Table, Alias, QLCData3),
     MnesiaTable = lists:concat([Alias, " <- mnesia:table(", Table, ")"]),
 	QLCData5 = dict:store(Table, MnesiaTable, QLCData4),
-    QLCData6 = dict:store(tables, dict:fetch(tables, QLCData5) ++ [Table], QLCData5), 
-    QLCData7 = dict:store(aliases, dict:fetch(aliases, QLCData6) ++ [Alias], QLCData6), 
+    QLCData6 = dict:store(tables, dict:fetch(tables, QLCData5) ++ [Table], QLCData5),
+    QLCData7 = dict:store(aliases, dict:fetch(aliases, QLCData6) ++ [Alias], QLCData6),
 	get_qlc_metadata(Tables, QLCData7).
 
-    
-% for each table field (column), store the following: 
+
+% for each table field (column), store the following:
 % {Table, Field} => "element(Alias, FieldIndex)" where Table and Field are atoms
 % {Alias, Field} => "element(Alias, FieldIndex)" where Alias is a string and Field is an atom
 % {index, Table, Field} => FieldIndex where Table and Field are atoms and FieldIndex is an integer
@@ -649,10 +649,10 @@ get_default_user_properties(_TableType, Field, Index) when Index > 1 ->
     case lists:suffix("id", atom_to_list(Field)) of
         true -> {Field, {integer, undefined}, true, undefined, undefined, undefined, integer};
         _False -> {Field, {varchar, undefined}, true, undefined, undefined, undefined, binary}
-	end.    
+	end.
 
 
-%% @doc Return the first field of the given table if it is an identity field (auto-incrementing) 
+%% @doc Return the first field of the given table if it is an identity field (auto-incrementing)
 %%		or return undefined
 get_identity_field(Table) ->
     [Field | _Rest] = table_fields(Table),
@@ -661,7 +661,7 @@ get_identity_field(Table) ->
         _Other -> undefined
     end.
 
-                                                                                
+
 %% @doc Find the field's position in the given table
 field_index(Table, Field) ->
     field_index(Field, 1, table_fields(Table)).
@@ -669,7 +669,7 @@ field_index(Field, Index, [Field | _Rest]) ->
     Index;
 field_index(Field, Index, [_Field | Rest]) ->
     field_index(Field, Index + 1, Rest);
-field_index(_Field, _Index, []) -> 
+field_index(_Field, _Index, []) ->
     0.
 
 
@@ -683,7 +683,7 @@ table_size(Table) ->
     mnesia:table_info(Table, size).
 
 mnesia_type(Table, Field) ->
-	{Field, {_Type, _Modifier}, _Null, _Key, _Default, _Extra, MnesiaType} = 
+	{Field, {_Type, _Modifier}, _Null, _Key, _Default, _Extra, MnesiaType} =
              get_user_properties(Table, Field),
      MnesiaType.
 
@@ -700,7 +700,7 @@ convert(undefined, _Type) ->
 convert(Value, undefined) ->
     Value;
 
-                        
+
 convert(Value, integer) when is_integer(Value) ->
     Value;
 convert(Value, float) when is_integer(Value) ->
@@ -787,7 +787,7 @@ resolve_field(From, Tables, QLCData) when is_list(From) ->
     resolve_field(list_to_atom(From), Tables, QLCData);
 resolve_field(From, Tables, QLCData) ->
 	lists:foldl(
-    	fun(Table, Acc) -> case dict:is_key({Table,From}, QLCData) of true -> [Table | Acc]; _ -> Acc end end, 
+    	fun(Table, Acc) -> case dict:is_key({Table,From}, QLCData) of true -> [Table | Acc]; _ -> Acc end end,
 		[],
 		Tables).
 
@@ -830,7 +830,7 @@ combinewith(Separator, List) ->
 %%   Fun can contain an arbitrary sequence of calls to
 %%   the erlydb_mnesia's query functions. If Fun crashes or returns
 %%   or throws 'error' or {error, Err}, the transaction is automatically
-%%   rolled back. 
+%%   rolled back.
 %%
 %% @spec transaction(Fun::function(), Options::options()) ->
 %%   {atomic, Result} | {aborted, Reason}
@@ -862,7 +862,7 @@ get_select_result({data, Data}, undefined) ->
     {ok, lists:reverse(Result)};
 get_select_result({data, Data}, [Table | _Rest] = FixedVals)->
     Results = lists:foldl(
-    	fun(DataTuple, Acc) -> 
+    	fun(DataTuple, Acc) ->
 			% some data tuples are the records themselves with the table/record name as the first element...
         	[Table2 | Fields] = DataList = tuple_to_list(DataTuple),
             Row = if Table == Table2 -> FixedVals ++ Fields;
@@ -871,7 +871,7 @@ get_select_result({data, Data}, [Table | _Rest] = FixedVals)->
             [list_to_tuple(Row) | Acc]
         end, [], Data),
     {ok, lists:reverse(Results)};
-            
+
 get_select_result(Other, _) -> Other.
 
 
