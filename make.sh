@@ -1,11 +1,15 @@
-#!/bin/bash
+#!/bin/sh
 
 ERLIB=$(erl -noshell -eval 'io:format(code:lib_dir()).' -s erlang halt)
 YAWS=$(ls $ERLIB | grep yaws)
 
+YAWS_INCLUDE_DIR=$ERLIB/$YAWS/include
+if [ ! -e $YAWS_INCLUDE_DIR ]; then
+  YAWS_INCLUDE_DIR=/usr/local/lib/yaws/include
+fi
+
 cat >Emakefile <<EOF
-{"src/erlyweb/*", [debug_info, {outdir, "ebin"},
-{i,"$ERLIB/$YAWS/include"}]}.
+{"src/erlyweb/*", [debug_info, {outdir, "ebin"}, {i,"$YAWS_INCLUDE_DIR"}]}.
 {"src/erlydb/*", [debug_info, {outdir, "ebin"}]}.
 {"src/erlsql/*", [debug_info, {outdir, "ebin"}]}.
 {"src/erltl/*", [debug_info, {outdir, "ebin"}]}.
