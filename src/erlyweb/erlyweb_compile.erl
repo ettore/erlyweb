@@ -539,8 +539,9 @@ get_app_data_module(AppName) when is_list(AppName) ->
 
 try_func(Module, FuncName, Params, Default) ->
     case catch apply(Module, FuncName, Params) of
-	{'EXIT', {undef, [{Module, FuncName, _} | _]}} -> Default;
-	{'EXIT', Err} -> exit(Err);
-	Val -> Val
+        {'EXIT', {undef, [{Module, FuncName, _} | _]}} -> Default;
+        {'EXIT', {undef, [{Module, FuncName, _, _} | _]}} -> Default;
+        {'EXIT', Err} -> exit(Err);
+        Val -> Val
     end.
 
