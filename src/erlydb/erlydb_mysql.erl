@@ -40,7 +40,6 @@
 	 execute_update/2,
 	 execute_update/3]).
 
-
 %% Useful for debugging
 
 -define(L(Msg), io:format("~p:~b ~p ~n", [?MODULE, ?LINE, Msg])).

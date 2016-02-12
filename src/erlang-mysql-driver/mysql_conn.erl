@@ -230,11 +230,13 @@ fetch_local(State, Query) ->
     do_query(State, Query).
 
 execute_local(State, Name, Params) ->
+    ?L(State),
     case do_execute(State, Name, Params, undefined) of
 	{ok, Res, State1} ->
 	    put(?STATE_VAR, State1),
 	    Res;
 	Err ->
+	    ?L(Err),
 	    Err
     end.
 
@@ -347,7 +349,8 @@ init(Host, Port, User, Password, Database, LogFun, Encoding, PoolId, Parent) ->
 					  },
 			    loop(State)
 		    end;
-		{error, _Reason} ->
+		{error, The_Reason} ->
+		    ?L(The_Reason),
 		    Parent ! {mysql_conn, self(), {error, login_failed}}
 	    end;
 	E ->
@@ -624,9 +627,9 @@ greeting(Packet, LogFun) ->
     {normalize_version(Version, LogFun), Salt, Salt2, Caps}.
 
 %% part of greeting/2
-asciz(Data) when binary(Data) ->
+asciz(Data) when is_binary(Data) ->
     mysql:asciz_binary(Data, []);
-asciz(Data) when list(Data) ->
+asciz(Data) when is_list(Data) ->
     {String, [0 | Rest]} = lists:splitwith(fun (C) ->
 						   C /= 0
 					   end, Data),

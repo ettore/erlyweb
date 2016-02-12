@@ -416,6 +416,7 @@ execute(PoolId, Name, Params, Timeout) ->
 		      put(?STATE_VAR, NewState),
 		      Res;
 		  Err ->
+		      ?L(Err),
 		      Err
 	      end
     end.
